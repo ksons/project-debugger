@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online ZPRJ Parser</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/6.12.6/ajv.min.js"></script>
+    <style>
+        .file-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .json-output {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .version-chip {
+            font-size: 1.2rem;
+            height: auto;
+            line-height: 32px;
+            padding: 0 12px;
+        }
+
+        .view-zpac-btn {
+            margin-left: 8px;
+        }
+
+        #zpacResults {
+            margin-top: 2rem;
+            border-top: 2px solid #e0e0e0;
+            padding-top: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="blue darken-3">
+        <div class="nav-wrapper container">
+            <a href="#" class="brand-logo">ZPRJ Parser Demo</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="section">
+            <h5>Upload ZPRJ File</h5>
+            <form id="uploadForm">
+                <div class="file-field input-field">
+                    <div class="btn blue">
+                        <span>Select File</span>
+                        <input type="file" id="fileInput" accept=".zprj">
+                    </div>
+                    <div class="file-path-wrapper">
+                        <input class="file-path validate" type="text" placeholder="Upload a ZPRJ file">
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div id="results" class="section" style="display: none;">
+            <div class="row">
+                <div class="col s12">
+                    <div id="versionInfo">
+                        <!-- Version info will be inserted here -->
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12">
+                    <h5>File Contents</h5>
+                    <div class="file-list">
+                        <table class="striped">
+                            <thead>
+                                <tr>
+                                    <th>File Name</th>
+                                    <th>Type</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fileCollection"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col s12">
+                    <div id="imageRow" class="row"></div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12">
+                    <div id="jsonOutput"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col s12">
+                <h5>JSON Validation Result</h5>
+                <div id="validationResult" class="card-panel">
+                    <!-- Validation result will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="loader" class="center-align" style="display: none;">
+            <div class="preloader-wrapper big active">
+                <div class="spinner-layer spinner-blue-only">
+                    <div class="circle-clipper left">
+                        <div class="circle"></div>
+                    </div>
+                    <div class="gap-patch">
+                        <div class="circle"></div>
+                    </div>
+                    <div class="circle-clipper right">
+                        <div class="circle"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script type="module">
+        import init, { parse_zprj, parse_zpac } from './pkg/zprj_parser.js';
+
+        const jsonSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "first": {
+                    "type": "object"
+                },
+                "second": {
+                    "type": "object",
+                    "properties": {
+                        "closetIdList": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "compatibility": {
+                            "type": "object",
+                            "properties": {
+                                "sceneAvatarList": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "hasSkinSuit": {
+                                                "type": "boolean"
+                                            },
+                                            "id": {
+                                                "type": "string"
+                                            },
+                                            "skeletonVersion": {
+                                                "type": "integer"
+                                            },
+                                            "topologyVersion": {
+                                                "type": "integer"
+                                            }
+                                        },
+                                        "required": ["hasSkinSuit", "id", "skeletonVersion", "topologyVersion"]
+                                    }
+                                },
+                                "sceneGarment": {
+                                    "type": "object",
+                                    "properties": {
+                                        "hasSkinSuit": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": ["hasSkinSuit"]
+                                },
+                                "sw": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer"
+                                        },
+                                        "majorVersion": {
+                                            "type": "integer"
+                                        },
+                                        "minorVersion": {
+                                            "type": "integer"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "patchVersion": {
+                                            "type": "integer"
+                                        },
+                                        "revisionVersion": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": ["id", "majorVersion", "minorVersion", "name", "patchVersion", "revisionVersion"]
+                                }
+                            },
+                            "required": ["sw"]
+                        },
+                        "rootClosetId": {
+                            "type": "string"
+                        },
+                        "uniqueId": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["compatibility"]
+                }
+            },
+            "required": ["first", "second"]
+        };
+
+        const ajv = new Ajv();
+        const validate = ajv.compile(jsonSchema);
+
+        function validateJson(json) {
+            const valid = validate(json);
+            if (!valid) {
+                return {
+                    valid: false,
+                    errors: validate.errors
+                };
+            }
+            return { valid: true };
+        }
+        const toFileType = (filename) => {
+            const ext = filename.split('.').pop().toLowerCase();
+            switch (ext) {
+                case "json": return "JSON File";
+                case "png": return "PNG Image";
+                default: return filename.split('.').pop().toUpperCase() + " File";
+            }
+        }
+
+        // Add a function to handle ZPAC parsing
+        async function parseZpacContent(arrayBuffer) {
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const result = parse_zpac(uint8Array);
+            return result;
+        }
+
+        function displayFileList(result, fileCollection) {
+            for (const file of result.zip_file_names) {
+                const tr = document.createElement('tr');
+                const isZpac = file.toLowerCase().endsWith('.zpac');
+
+                tr.innerHTML = `
+                    <td>${file}</td>
+                    <td>${toFileType(file)}</td>
+                    <td>
+                        <a class="btn-floating btn-small waves-effect waves-light blue download-btn" data-filename="${file}">
+                            <i class="material-icons">file_download</i>
+                        </a>
+                        ${isZpac ? `
+                        <a class="btn-floating btn-small waves-effect waves-light green view-zpac-btn" data-filename="${file}">
+                            <i class="material-icons">visibility</i>
+                        </a>
+                        ` : ''}
+                    </td>
+                `;
+                fileCollection.appendChild(tr);
+
+                if (isZpac) {
+                    const viewBtn = tr.querySelector('.view-zpac-btn');
+                    viewBtn.addEventListener('click', async () => {
+                        try {
+                            const fileContent = result.extract_file(file);
+                            const zpacResult = parse_zpac(fileContent);
+                            displayZpacContent(zpacResult, file);
+                        } catch (error) {
+                            M.toast({ html: `Error parsing ZPAC: ${error}`, classes: 'red' });
+                        }
+                    });
+                }
+            }
+        }
+
+        const createVersionCard = (version) => {
+            return `<div class="card">
+                        <div class="card-content">
+                            <span class="card-title">Version</span>
+                            <p>
+                                <span class="version-chip chip">Major: ${version.major}</span>
+                                <span class="version-chip chip">Minor: ${version.minor}</span>
+                                <span class="version-chip chip">Build: ${version.build}</span>
+                                <span class="version-chip chip">Revision: ${version.revision}</span>
+                            </p>
+                        </div>
+                    </div>`
+        }
+
+        const createPreviewCard = (previews) => {
+            return `<div class="card">
+                        <div class="card-content">
+                            <span class="card-title">Previews</span>
+                            <div class="row" id="zpacImageRow">
+                                ${previews.map((preview, index) => {
+                const blob = new Blob([preview], { type: 'image/png' });
+                const url = URL.createObjectURL(blob);
+                return `
+                                        <div class="col s6 m3">
+                                            <img src="${url}" alt="ZPAC Preview ${index + 1}" 
+                                                    class="materialboxed preview-image">
+                                        </div>
+                                    `;
+            }).join('')}
+                            </div>
+                        </div>
+                    </div>`
+        }
+
+        const createJSONCard = (obj) => {
+            return `<div class="card">
+                        <div class="card-content">
+                            <span class="card-title">JSON</span>
+                            <pre class="json-output">${JSON.stringify(obj, null, "\t")}</pre>
+                        </div>
+                    </div>`
+        }
+
+
+        // Add a function to display ZPAC content
+        function displayZpacContent(zpacResult, filename) {
+            // Create or show ZPAC section
+            let zpacSection = document.getElementById('zpacResults');
+            if (!zpacSection) {
+                zpacSection = document.createElement('div');
+                zpacSection.id = 'zpacResults';
+                zpacSection.className = 'section';
+                document.getElementById('results').appendChild(zpacSection);
+            }
+
+            const version = JSON.parse(zpacResult.version);
+            const parsedJson = JSON.parse(zpacResult.json);
+
+            zpacSection.innerHTML = `
+                <div class="row">
+                    <div class="col s12">
+                        <h5>ZPAC Content: ${filename}</h5>
+                        
+                        ${createVersionCard(version)}
+                        
+                        ${createPreviewCard(zpacResult.previews)}
+
+                        ${createJSONCard(parsedJson)}
+                        
+                    </div>
+                </div>
+            `;
+
+            displayFileList(zpacResult, zpacSection);
+            zpacSection.querySelectorAll('.download-btn').forEach(btn => {
+                btn.addEventListener('click', (event) => {
+                    const fileName = event.currentTarget.getAttribute('data-filename');
+                    const fileContent = zpacResult.extract_file(fileName);
+                    const blob = new Blob([fileContent], { type: 'application/octet-stream' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                });
+            });
+
+
+            // Reinitialize Materialize components
+            M.Materialbox.init(zpacSection.querySelectorAll('.materialboxed'));
+        }
+
+        async function run() {
+            await init();
+
+            const fileInput = document.getElementById('fileInput');
+            const results = document.getElementById('results');
+            const loader = document.getElementById('loader');
+            const imageRow = document.getElementById('imageRow');
+            const fileCollection = document.getElementById('fileCollection');
+            const jsonOutput = document.getElementById('jsonOutput');
+            const versionInfo = document.getElementById('versionInfo');
+            const validationResult = document.getElementById('validationResult');
+
+            fileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                results.style.display = 'none';
+                loader.style.display = 'block';
+
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const result = parse_zprj(uint8Array);
+
+                    // Clear previous results
+                    imageRow.innerHTML = '';
+                    fileCollection.innerHTML = '';
+
+                    // Display CLO Version
+                    const version = JSON.parse(result.version);
+                    versionInfo.innerHTML = createVersionCard(version);
+
+                    // Display JSON and validate
+                    const parsedJson = JSON.parse(result.json);
+                    jsonOutput.innerHTML = createJSONCard(parsedJson);
+
+                    // Validate JSON
+                    const validationResults = validateJson(parsedJson);
+                    if (validationResults.valid) {
+                        validationResult.innerHTML = '<p class="green-text">JSON is valid according to the schema.</p>';
+                    } else {
+                        validationResult.innerHTML = `
+                            <p class="red-text">JSON validation failed:</p>
+                            <ul>
+                                ${validationResults.errors.map(error => `<li>${error.dataPath} ${error.message}</li>`).join('')}
+                            </ul>
+                        `;
+                    }
+
+                    // Display previews
+                    imageRow.innerHTML = createPreviewCard(result.previews);
+                    /*result.previews.forEach((preview, index) => {
+                        const blob = new Blob([preview], { 'type': 'image/png' });
+                        const url = URL.createObjectURL(blob);
+
+                        const col = document.createElement('div');
+                        col.className = "col s6 m3";
+                        col.innerHTML = `
+                            <img src="${url}" alt="Preview ${index + 1}" class="materialboxed preview-image">
+                        `;
+                        imageRow.appendChild(col);
+                    })*/;
+
+
+
+                    // Update the file list display call
+                    await displayFileList(result, fileCollection);
+
+                    // Initialize Materialize components
+                    M.Materialbox.init(document.querySelectorAll('.materialboxed'));
+
+                    // Add event listeners for download buttons
+                    document.querySelectorAll('.download-btn').forEach(btn => {
+                        btn.addEventListener('click', (event) => {
+                            const fileName = event.currentTarget.getAttribute('data-filename');
+                            const fileContent = result.extract_file(fileName);
+                            const blob = new Blob([fileContent], { type: 'application/octet-stream' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = fileName;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                        });
+                    });
+
+                    results.style.display = 'block';
+                } catch (error) {
+                    M.toast({ html: `Error: ${error}`, classes: 'red' });
+                } finally {
+                    loader.style.display = 'none';
+                }
+            });
+        }
+
+        run();
+
+    </script>
+</body>
+
+</html>
