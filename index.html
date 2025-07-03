@@ -1,13 +1,453 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
+<!DOCTYPE html>
+<html lang="en" class="bg-gray-100">
+
+<head>
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ZProject Debugger</title>
-    <script type="module" crossorigin src="./assets/index-BfkwRv_9.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CSW_Lzxm.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+    <title>ZPRJ & ZFAB Parser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/6.12.6/ajv.min.js"></script>
+    <style>
+        .preview-image {
+            max-width: 100%;
+            height: auto;
+            cursor: pointer;
+        }
+
+        .json-output {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        /* Simple modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-content {
+            margin: auto;
+            display: block;
+            width: 80%;
+            max-width: 700px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #bbb;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body class="font-sans">
+    <nav class="bg-blue-800 shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+                <a href="#" class="text-white text-xl font-bold">ZPRJ & ZFAB Parser</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 mt-8">
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h5 class="text-2xl font-semibold mb-4">Upload ZPRJ or ZFAB File</h5>
+            <form id="uploadForm">
+                <div class="flex items-center">
+                    <label
+                        class="w-64 flex flex-col items-center px-4 py-2 bg-blue-600 text-white rounded-lg shadow-lg tracking-wide uppercase border border-blue-600 cursor-pointer hover:bg-blue-700">
+                        <span class="text-base leading-normal">Select a file</span>
+                        <input type="file" id="fileInput" accept=".zprj,.zfab" class="hidden" />
+                    </label>
+                    <span id="fileName" class="ml-4 text-gray-600"></span>
+                </div>
+            </form>
+            <p class="text-sm text-gray-500 mt-2">... or drop a file anywhere on the page.</p>
+        </div>
+
+        <div id="loader" class="text-center my-8" style="display: none;">
+            <div class="w-16 h-16 border-4 border-blue-500 border-dashed rounded-full animate-spin"></div>
+        </div>
+
+        <div id="results" style="display: none;" class="mt-8 space-y-8">
+            <div id="versionInfo"></div>
+            <div id="validationResult"></div>
+            <div id="jsonOutput" class="flex flex-wrap gap-8"></div>
+            <div id="imageRow" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+            <div id="zpacDetails" class="space-y-8"></div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h5 class="text-2xl font-semibold mb-4">ZIP Contents</h5>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="py-2 px-4 border-b">File Name</th>
+                                <th class="py-2 px-4 border-b">Type</th>
+                                <th class="py-2 px-4 border-b">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fileCollection" class="text-gray-700"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast-container" class="fixed bottom-5 right-5 space-y-2"></div>
+    <div id="imageModal" class="modal">
+        <span class="close">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <div id="drop-overlay"
+        class="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex-col items-center justify-center text-white text-2xl font-bold"
+        style="display: none;">
+        <svg class="w-24 h-24 mb-4 text-white animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h10a4 4 0 014 4v5a4 4 0 01-4 4H7z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v6m0 0l-3-3m3 3l3-3"></path>
+        </svg>
+        <span>Drop file to upload</span>
+    </div>
+
+
+    <script type="module">
+        import init, { parse_zprj, parse_zpac, parse_zfab } from './pkg/zprj_parser.js';
+
+        (async () => {
+            await init();
+
+            const fileInput = document.getElementById("fileInput");
+            const fileNameSpan = document.getElementById("fileName");
+            const results = document.getElementById("results");
+            const loader = document.getElementById("loader");
+            const versionInfo = document.getElementById("versionInfo");
+            const validationResult = document.getElementById("validationResult");
+            const jsonOutput = document.getElementById("jsonOutput");
+            const imageRow = document.getElementById("imageRow");
+            const fileCollection = document.getElementById("fileCollection");
+            const zpacDetailsContainer = document.getElementById('zpacDetails');
+            const toastContainer = document.getElementById('toast-container');
+            const imageModal = document.getElementById('imageModal');
+            const modalImage = document.getElementById('modalImage');
+            const closeModal = document.querySelector('.modal .close');
+            const dropOverlay = document.getElementById('drop-overlay');
+
+            const jsonSchema = { /* Your JSON schema from previous version */ };
+
+            const ajv = new Ajv();
+            const validate = ajv.compile(jsonSchema);
+
+            const showToast = (message, type = 'error') => {
+                const toast = document.createElement('div');
+                const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+                toast.className = `${bgColor} text-white py-2 px-4 rounded-lg shadow-md animate-pulse`;
+                toast.textContent = message;
+                toastContainer.appendChild(toast);
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            };
+
+            const toFileType = (filename) => {
+                const ext = filename.split('.').pop().toLowerCase();
+                if (ext === 'json') return 'JSON File';
+                if (ext === 'png') return 'PNG Image';
+                if (ext === 'zpac') return 'ZPAC File';
+                return ext.toUpperCase() + ' File';
+            };
+
+            const createVersionCard = (version, title = "Version", user = null) => `
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <h6 class="text-xl font-semibold mb-2">${title}</h6>
+            <div class="flex flex-wrap gap-2">
+              <span class="bg-blue-100 text-blue-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded">Major: ${version.major}</span>
+              <span class="bg-blue-100 text-blue-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded">Minor: ${version.minor}</span>
+              <span class="bg-blue-100 text-blue-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded">Build: ${version.build}</span>
+              <span class="bg-blue-100 text-blue-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded">Revision: ${version.revision}</span>
+              ${user ? `<span class="bg-green-100 text-green-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded">User: ${user}</span>` : ""}
+            </div>
+          </div>`;
+
+            const createPreviewCard = (previews) => {
+                const cards = previews.map((preview, index) => {
+                    const blob = new Blob([preview], { type: 'image/png' });
+                    const url = URL.createObjectURL(blob);
+                    return `
+              <div>
+                <img src="${url}" class="preview-image rounded-lg shadow-md hover:shadow-xl transition-shadow" alt="Preview ${index + 1}" />
+              </div>`;
+                }).join('');
+                return cards;
+            };
+
+            const createJSONCard = (obj, title = "Metadata JSON") => {
+                if (!obj || Object.keys(obj).length === 0) return '';
+                return `
+                  <div class="bg-white p-6 rounded-lg shadow-md flex-1 min-w-[300px]">
+                    <h6 class="text-xl font-semibold mb-2">${title}</h6>
+                    <pre class="json-output bg-gray-50 p-4 rounded text-sm">${JSON.stringify(obj, null, 2)}</pre>
+                  </div>`;
+            }
+
+            const handleZpacParsing = (zprjResult, fileName) => {
+                try {
+                    showToast(`Parsing ${fileName}...`, 'info');
+                    const content = zprjResult.extract_file(fileName);
+                    if (!content) {
+                        showToast(`Could not extract ${fileName}`, 'error');
+                        return;
+                    }
+                    const zpacResult = parse_zpac(content);
+
+                    zpacDetailsContainer.innerHTML = ''; // Clear previous results
+
+                    const title = `Details for ${fileName}`;
+                    let zpacHTML = `<div class="bg-white p-6 rounded-lg shadow-md mt-8">
+                        <h5 class="text-2xl font-semibold mb-4">${title}</h5>`;
+
+                    // Version
+                    const version = JSON.parse(zpacResult.version);
+                    zpacHTML += createVersionCard(version, "ZPAC Version");
+
+                    // JSON
+                    const json = JSON.parse(zpacResult.json);
+                    zpacHTML += createJSONCard(json);
+
+                    // Previews
+                    let previewHTML = createPreviewCard(zpacResult.previews);
+                    if (previewHTML) {
+                        zpacHTML += `<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">`;
+                        zpacHTML += previewHTML;
+                        zpacHTML += `</div>`;
+                    }
+
+                    zpacHTML += `</div>`;
+
+                    zpacDetailsContainer.innerHTML = zpacHTML;
+
+                    // Re-initialize image previews if any
+                    zpacDetailsContainer.querySelectorAll('.preview-image').forEach(img => {
+                        img.addEventListener('click', () => {
+                            imageModal.style.display = 'block';
+                            modalImage.src = img.src;
+                        });
+                    });
+
+                    showToast(`${fileName} parsed successfully`, 'success');
+                    zpacDetailsContainer.scrollIntoView({ behavior: 'smooth' });
+
+                } catch (err) {
+                    showToast(`Error parsing ZPAC file: ${err.message}`, 'error');
+                }
+            };
+
+            const handleFile = async (file) => {
+                if (!file) {
+                    fileNameSpan.textContent = '';
+                    return;
+                };
+                fileNameSpan.textContent = file.name;
+
+
+                results.style.display = "none";
+                loader.style.display = "block";
+
+                try {
+                    const buffer = await file.arrayBuffer();
+                    const bytes = new Uint8Array(buffer);
+                    const ext = file.name.split('.').pop().toLowerCase();
+
+                    let result, isZfab = false;
+
+                    if (ext === 'zfab') {
+                        result = parse_zfab(bytes);
+                        isZfab = true;
+                    } else if (ext === 'zprj') {
+                        result = parse_zprj(bytes);
+                    } else {
+                        throw new Error("Unsupported file type: " + ext);
+                    }
+
+                    // Reset UI
+                    versionInfo.innerHTML = '';
+                    jsonOutput.innerHTML = '';
+                    imageRow.innerHTML = '';
+                    fileCollection.innerHTML = '';
+                    validationResult.innerHTML = '';
+                    zpacDetailsContainer.innerHTML = '';
+
+                    // Versions
+                    if (isZfab) {
+                        const container = JSON.parse(result.container_version);
+                        const project = JSON.parse(result.project_version);
+                        const user = result.user;
+                        versionInfo.innerHTML = createVersionCard(container, "Container Version", user) +
+                            createVersionCard(project, "Project Version");
+                    } else {
+                        const version = JSON.parse(result.version);
+                        versionInfo.innerHTML = createVersionCard(version);
+                    }
+
+                    // JSON
+                    const json = JSON.parse(result.json);
+                    jsonOutput.innerHTML = ''; // Clear it first
+
+                    if (isZfab) {
+                        // For zfab, just show the whole JSON
+                        jsonOutput.innerHTML = createJSONCard(json);
+                    } else {
+                        // For zprj, check for internal and metadata
+                        const internalCard = createJSONCard(json.internal, "Internal Metadata");
+                        const metadataCard = createJSONCard(json.metadata, "Custom Metadata");
+
+                        if (internalCard || metadataCard) {
+                            jsonOutput.innerHTML = internalCard + metadataCard;
+                        } else {
+                            // Fallback for zprj if no internal/metadata keys, or they are empty
+                            jsonOutput.innerHTML = createJSONCard(json);
+                        }
+                    }
+
+                    // Validation
+                    if (!isZfab) {
+                        const validation = validate(json);
+                        validationResult.innerHTML = validation
+                            ? '<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert"><strong class="font-bold">✅ Success!</strong><span class="block sm:inline"> JSON is valid.</span></div>'
+                            : `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert"><strong class="font-bold">❌ Validation failed:</strong><ul>${validate.errors.map(e => `<li>${e.dataPath} ${e.message}</li>`).join('')}</ul></div>`;
+                    } else {
+                        validationResult.innerHTML = '<div class="bg-gray-100 border border-gray-400 text-gray-700 px-4 py-3 rounded relative" role="alert">Skipping validation for ZFAB.</div>';
+                    }
+
+                    // Previews
+                    imageRow.innerHTML = createPreviewCard(result.previews);
+                    imageRow.querySelectorAll('.preview-image').forEach(img => {
+                        img.addEventListener('click', () => {
+                            imageModal.style.display = 'block';
+                            modalImage.src = img.src;
+                        });
+                    });
+
+
+                    // Files
+                    displayFileList(result, fileCollection);
+
+                    results.style.display = "block";
+                } catch (err) {
+                    showToast(`Error: ${err.message}`, 'error');
+                } finally {
+                    loader.style.display = "none";
+                }
+            };
+
+            function displayFileList(result, container) {
+                container.innerHTML = '';
+                result.zip_file_names.forEach(file => {
+                    const tr = document.createElement('tr');
+                    const fileType = toFileType(file);
+                    tr.innerHTML = `
+              <td class="py-2 px-4 border-b">${file}</td>
+              <td class="py-2 px-4 border-b">${fileType}</td>
+              <td class="py-2 px-4 border-b space-x-2">
+                <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-xs download-btn" data-filename="${file}">
+                  Download
+                </button>
+                ${fileType === 'ZPAC File' ? `
+                <button class="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-2 rounded text-xs parse-zpac-btn" data-filename="${file}">
+                  Parse
+                </button>
+                ` : ''}
+              </td>`;
+                    container.appendChild(tr);
+                });
+
+                container.querySelectorAll('.download-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const fileName = btn.dataset.filename;
+                        const content = result.extract_file(fileName);
+                        const blob = new Blob([content], { type: 'application/octet-stream' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileName;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    });
+                });
+
+                container.querySelectorAll('.parse-zpac-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const fileName = btn.dataset.filename;
+                        handleZpacParsing(result, fileName);
+                    });
+                });
+            }
+
+            fileInput.addEventListener("change", (event) => {
+                const file = event.target.files[0];
+                handleFile(file);
+            });
+
+            closeModal.addEventListener('click', () => {
+                imageModal.style.display = 'none';
+            });
+
+            window.addEventListener('click', (event) => {
+                if (event.target == imageModal) {
+                    imageModal.style.display = 'none';
+                }
+            });
+
+            // Drag and Drop
+            window.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.types.includes('Files')) {
+                    dropOverlay.style.display = 'flex';
+                }
+            });
+
+            window.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+
+            dropOverlay.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropOverlay.style.display = 'none';
+            });
+
+            dropOverlay.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropOverlay.style.display = 'none';
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            });
+        })();
+    </script>
+</body>
+
 </html>
